@@ -19,10 +19,6 @@ This is a custom integration for Home Assistant that allows you to control and m
     -   Increment and Decrement the power target.
 -   **Robust Authentication**: Automatically handles the renewal of authentication tokens to ensure the connection is always active.
 
-## Screenshot
-
-<!-- It is highly recommended to replace this with a real screenshot of the device entities in Home Assistant, showing both sensors and buttons. -->
-![image](https://user-images.githubusercontent.com/12345/67890.png)
 
 ## Prerequisites
 
