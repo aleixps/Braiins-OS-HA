@@ -4,6 +4,7 @@ import logging
 import asyncio
 import aiohttp
 import time
+from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 
@@ -20,7 +21,7 @@ class BraiinsAPI:
         self._base_url = f"http://{self._entry.data['miner_ip']}/api/v1"
         self._token = self._entry.data["token"]
         self._headers = {"Authorization": self._token}
-        self._lock = asyncio.Lock()  # To prevent multiple concurrent relogin attempts
+        self._lock = asyncio.Lock()
 
     async def async_relogin(self) -> bool:
         """Perform a login to get a new token."""
@@ -42,11 +43,9 @@ class BraiinsAPI:
 
                     _LOGGER.info("Successfully re-authenticated and got a new token.")
                     
-                    # Update internal state
                     self._token = new_token
                     self._headers = {"Authorization": self._token}
 
-                    # Update the config entry in Home Assistant to persist the new token
                     new_data = {**self._entry.data, "token": new_token, "expires_at": new_expires_at}
                     self._hass.config_entries.async_update_entry(self._entry, data=new_data)
                     
@@ -64,7 +63,8 @@ class BraiinsAPI:
 
     async def _make_request(self, method: str, endpoint: str, data: dict | None = None) -> bool:
         """Make a generic request, ensuring the token is valid first."""
-        await self.async_ensure_token_valid()
+        if not await self._is_token_valid_and_renew():
+            return False
         
         url = f"{self._base_url}/{endpoint}"
         _LOGGER.debug("Sending %s request to %s with data: %s", method.upper(), url, data)
@@ -77,14 +77,47 @@ class BraiinsAPI:
                     response.raise_for_status()
                     _LOGGER.info("Successfully sent command to %s", url)
                     return True
-        except (aiohttp.ClientError, asyncio.TimeoutError, asyncio.CancelledError) as err:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             _LOGGER.error("Failed to send command to %s: %s", url, err)
             return False
         except Exception as err:
             _LOGGER.exception("An unexpected error occurred while sending command to %s", url)
             return False
 
-    # --- Public API methods ---
+    # ### NEW METHOD ###
+    async def _make_get_request(self, endpoint: str) -> dict[str, Any] | None:
+        """Make a GET request and return the JSON response."""
+        if not await self._is_token_valid_and_renew():
+            return None
+        
+        url = f"{self._base_url}/{endpoint}"
+        _LOGGER.debug("Sending GET request to %s", url)
+        try:
+            async with asyncio.timeout(10):
+                async with self._session.get(url, headers=self._headers) as response:
+                    response.raise_for_status()
+                    return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Failed to get data from %s: %s", url, err)
+            return None
+        except Exception as err:
+            _LOGGER.exception("An unexpected error occurred while getting data from %s", url)
+            return None
+
+    async def _is_token_valid_and_renew(self) -> bool:
+        """Helper to check token validity and renew if needed."""
+        async with self._lock:
+            if time.time() > self._entry.data["expires_at"]:
+                return await self.async_relogin()
+        return True
+
+    # ### Public API methods ###
+
+    # ### NEW METHOD ###
+    async def async_get_hashboard_data(self) -> dict[str, Any] | None:
+        """Get the hashboard hardware data from the miner."""
+        return await self._make_get_request("miner/hw/hashboards")
+
     async def increment_power_target(self, value: int = 250) -> bool:
         """Increment the power target by a given value."""
         return await self._make_request("patch", "performance/power-target/increment", {"watt": value})
