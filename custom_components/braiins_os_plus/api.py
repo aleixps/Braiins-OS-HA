@@ -55,14 +55,54 @@ class BraiinsAPI:
             _LOGGER.error("Failed to re-authenticate with Braiins OS+: %s", err)
             return False
 
-    async def async_ensure_token_valid(self) -> None:
-        """Check if the token is valid and renew it if necessary."""
+    async def _is_token_valid_and_renew(self) -> bool:
+        """Helper to check token validity and renew if needed."""
         async with self._lock:
             if time.time() > self._entry.data["expires_at"]:
-                await self.async_relogin()
+                return await self.async_relogin()
+        return True
+
+    async def _make_get_request(self, endpoint: str) -> dict[str, Any] | None:
+        """Make a GET request and return the JSON response."""
+        if not await self._is_token_valid_and_renew():
+            return None
+        
+        url = f"{self._base_url}/{endpoint}"
+        _LOGGER.debug("Sending GET request to %s", url)
+        try:
+            async with asyncio.timeout(10):
+                async with self._session.get(url, headers=self._headers) as response:
+                    response.raise_for_status()
+                    return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            _LOGGER.error("Failed to get data from %s: %s", url, err)
+            return None
+        except Exception as err:
+            _LOGGER.exception("An unexpected error occurred while getting data from %s", url)
+            return None
+
+    # ### NEW MASTER UPDATE METHOD ###
+    async def async_update_data(self) -> dict[str, Any]:
+        """Fetch data from all endpoints and combine them."""
+        # Use asyncio.gather to fetch from both endpoints concurrently
+        results = await asyncio.gather(
+            self._make_get_request("miner/hw/hashboards"),
+            self._make_get_request("miner/stats")
+        )
+        
+        hashboard_data, stats_data = results
+        
+        # Combine the data into a single dictionary
+        combined_data = {}
+        if hashboard_data:
+            combined_data.update(hashboard_data) # Adds "hashboards": [...]
+        if stats_data:
+            combined_data.update(stats_data) # Adds "pool_stats", "miner_stats", etc.
+
+        return combined_data
 
     async def _make_request(self, method: str, endpoint: str, data: dict | None = None) -> bool:
-        """Make a generic request, ensuring the token is valid first."""
+        """Make a PUT or PATCH request, ensuring the token is valid first."""
         if not await self._is_token_valid_and_renew():
             return False
         
@@ -83,40 +123,6 @@ class BraiinsAPI:
         except Exception as err:
             _LOGGER.exception("An unexpected error occurred while sending command to %s", url)
             return False
-
-    # ### NEW METHOD ###
-    async def _make_get_request(self, endpoint: str) -> dict[str, Any] | None:
-        """Make a GET request and return the JSON response."""
-        if not await self._is_token_valid_and_renew():
-            return None
-        
-        url = f"{self._base_url}/{endpoint}"
-        _LOGGER.debug("Sending GET request to %s", url)
-        try:
-            async with asyncio.timeout(10):
-                async with self._session.get(url, headers=self._headers) as response:
-                    response.raise_for_status()
-                    return await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOGGER.error("Failed to get data from %s: %s", url, err)
-            return None
-        except Exception as err:
-            _LOGGER.exception("An unexpected error occurred while getting data from %s", url)
-            return None
-
-    async def _is_token_valid_and_renew(self) -> bool:
-        """Helper to check token validity and renew if needed."""
-        async with self._lock:
-            if time.time() > self._entry.data["expires_at"]:
-                return await self.async_relogin()
-        return True
-
-    # ### Public API methods ###
-
-    # ### NEW METHOD ###
-    async def async_get_hashboard_data(self) -> dict[str, Any] | None:
-        """Get the hashboard hardware data from the miner."""
-        return await self._make_get_request("miner/hw/hashboards")
 
     async def increment_power_target(self, value: int = 250) -> bool:
         """Increment the power target by a given value."""

@@ -20,19 +20,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = async_get_clientsession(hass)
     api = BraiinsAPI(hass, entry, session)
 
-    # Create a coordinator to fetch data for sensors
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
-        name=f"{DOMAIN}_hashboard_coordinator",
-        update_method=api.async_get_hashboard_data,
+        name=f"{DOMAIN}_data_coordinator",
+        # ### THE FIX IS HERE ###
+        update_method=api.async_update_data, # Point to the new master method
         update_interval=timedelta(seconds=5),
     )
 
-    # Fetch initial data so we have it when platforms are loaded
     await coordinator.async_config_entry_first_refresh()
 
-    # Store both the API object and the coordinator
     hass.data[DOMAIN][entry.entry_id] = {
         "api": api,
         "coordinator": coordinator,

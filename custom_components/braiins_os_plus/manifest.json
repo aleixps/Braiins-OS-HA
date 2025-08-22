@@ -1,7 +1,7 @@
 {
   "domain": "braiins_os_plus",
   "name": "Braiins OS+",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "config_flow": true,
   "documentation": "https://github.com/aleixps/Braiins-OS-HA",
   "issue_tracker": "https://github.com/aleixps/Braiins-OS-HA/issues",

@@ -9,7 +9,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTemperature, UnitOfPower
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -20,6 +20,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 TERAHASH_PER_SECOND = "TH/s"
+JOULE_PER_TERAHASH = "J/TH"
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -31,20 +32,24 @@ async def async_setup_entry(
     
     sensors = []
 
-    # Create sensors for each hashboard
-    for board in coordinator.data.get("hashboards", []):
-        board_id = board.get("id")
-        sensors.extend([
-            HashboardChipTempSensor(coordinator, board_id),
-            HashboardBoardTempSensor(coordinator, board_id),
-            HashboardHashrateSensor(coordinator, board_id),
-        ])
+    # Create sensors for each hashboard if data is available
+    if coordinator.data and "hashboards" in coordinator.data:
+        for board in coordinator.data.get("hashboards", []):
+            board_id = board.get("id")
+            sensors.extend([
+                HashboardChipTempSensor(coordinator, board_id),
+                HashboardBoardTempSensor(coordinator, board_id),
+                HashboardHashrateSensor(coordinator, board_id),
+            ])
     
-    # Create aggregate sensors
+    # Create aggregate and stats sensors
     sensors.extend([
         TotalHashrateSensor(coordinator),
         HighestChipTempSensor(coordinator),
         HighestBoardTempSensor(coordinator),
+        # ### NEW SENSORS ###
+        MinerConsumptionSensor(coordinator),
+        MinerEfficiencySensor(coordinator),
     ])
 
     async_add_entities(sensors)
@@ -75,8 +80,43 @@ class BraiinsSensor(CoordinatorEntity, SensorEntity):
         return super().available and self.coordinator.data is not None
 
 
-# --- Aggregate Sensors ---
+# --- Aggregate and Stats Sensors ---
 
+class MinerConsumptionSensor(BraiinsSensor):
+    """Sensor for the miner's power consumption."""
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "miner_consumption")
+        self._attr_name = "Miner Consumption"
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the power consumption in Watts."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get("power_stats", {}).get("approximated_consumption", {}).get("watt")
+
+class MinerEfficiencySensor(BraiinsSensor):
+    """Sensor for the miner's efficiency."""
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "miner_efficiency")
+        self._attr_name = "Miner Efficiency"
+        self._attr_native_unit_of_measurement = JOULE_PER_TERAHASH
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:flash"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the efficiency in J/TH."""
+        if not self.coordinator.data:
+            return None
+        efficiency = self.coordinator.data.get("power_stats", {}).get("efficiency", {}).get("joule_per_terahash")
+        return round(efficiency, 2) if efficiency is not None else None
+
+# (The rest of the sensor classes: TotalHashrateSensor, HighestChipTempSensor, etc. remain unchanged)
+# ...
 class TotalHashrateSensor(BraiinsSensor):
     """Sensor for the total real hashrate of all boards."""
     def __init__(self, coordinator):
@@ -170,53 +210,4 @@ class HashboardSensor(BraiinsSensor):
 
 class HashboardChipTempSensor(HashboardSensor):
     """Sensor for a single hashboard's highest chip temperature."""
-    def __init__(self, coordinator, board_id: str):
-        super().__init__(coordinator, board_id, "chip_temp")
-        self._attr_name = f"Hashboard {board_id} Chip Temp"
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self) -> float | None:
-        if not self.board_data:
-            return None
-        return self.board_data.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
-
-
-class HashboardBoardTempSensor(HashboardSensor):
-    """Sensor for a single hashboard's board temperature."""
-    def __init__(self, coordinator, board_id: str):
-        super().__init__(coordinator, board_id, "board_temp")
-        self._attr_name = f"Hashboard {board_id} Board Temp"
-        self._attr_device_class = SensorDeviceClass.TEMPERATURE
-        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-
-    @property
-    def native_value(self) -> float | None:
-        if not self.board_data:
-            return None
-        return self.board_data.get("board_temp", {}).get("degree_c")
-
-
-class HashboardHashrateSensor(HashboardSensor):
-    """Sensor for a single hashboard's hashrate."""
-    def __init__(self, coordinator, board_id: str):
-        super().__init__(coordinator, board_id, "hashrate")
-        self._attr_name = f"Hashboard {board_id} Hashrate"
-        self._attr_native_unit_of_measurement = TERAHASH_PER_SECOND
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_icon = "mdi:speedometer"
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the hashrate in TH/s."""
-        if not self.board_data:
-            return None
-        
-        hashrate_ghs = self.board_data.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second")
-        if hashrate_ghs is None:
-            return None
-        
-        return round(hashrate_ghs / 1000, 2)
+  
