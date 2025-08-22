@@ -26,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER,
         name=f"{DOMAIN}_hashboard_coordinator",
         update_method=api.async_get_hashboard_data,
-        update_interval=timedelta(seconds=30),
+        update_interval=timedelta(seconds=5),
     )
 
     # Fetch initial data so we have it when platforms are loaded
