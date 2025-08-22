@@ -1,22 +1,26 @@
 # Braiins OS+ Integration for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![hacs_badge](https://imgshields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Project Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/aleixps/Braiins-OS-HA)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-This is a custom integration for Home Assistant that allows you to control and monitor your cryptocurrency miners running **Braiins OS+**. It connects directly to your miner's local API, providing simple controls within your Home Assistant dashboard.
+This is a custom integration for Home Assistant that allows you to control and monitor your cryptocurrency miners running **Braiins OS+**. It connects directly to your miner's local API, providing controls and sensors within your Home Assistant dashboard.
 
 ## Features
 
 -   **Local Control**: Connects directly to your miner via its local IP address. No cloud services are required.
+-   **Detailed Monitoring**: Provides sensor entities for key metrics, updated automatically.
+    -   Total hashrate (TH/s).
+    -   Highest chip and board temperatures.
+    -   Per-hashboard hashrate, chip temperature, and board temperature.
 -   **Simple Controls**: Provides button entities to perform key actions:
     -   Pause and Resume mining operations.
-    -   Increment and Decrement the power target by 250W.
+    -   Increment and Decrement the power target.
 -   **Robust Authentication**: Automatically handles the renewal of authentication tokens to ensure the connection is always active.
 
 ## Screenshot
 
-<!-- It is highly recommended to replace this with a real screenshot of the device entities in Home Assistant -->
+<!-- It is highly recommended to replace this with a real screenshot of the device entities in Home Assistant, showing both sensors and buttons. -->
 ![image](https://user-images.githubusercontent.com/12345/67890.png)
 
 ## Prerequisites
@@ -63,18 +67,44 @@ Once installed, you can add and configure the integration through the Home Assis
     -   **Password**: The password for your miner. If you don't have a password, you must still submit the field (leave it blank).
 5.  Click **"Submit"**.
 
-The integration will log in, retrieve an authentication token, and create a new device with four button entities.
+The integration will log in and create a new device with all associated entities.
 
-## Entities
+## Entities Created
 
-This integration creates the following button entities:
+The integration creates a single device representing your miner, with the following entities.
 
-| Entity                        | Description                             | Icon                 |
-| ----------------------------- | --------------------------------------- | -------------------- |
+### Controls
+
+| Entity ID                       | Description                             | Icon                 |
+| ------------------------------- | --------------------------------------- | -------------------- |
 | `button.increment_power_target` | Increases the power target by 250W.     | `mdi:arrow-up-bold`  |
 | `button.decrement_power_target` | Decreases the power target by 250W.     | `mdi:arrow-down-bold`|
 | `button.pause_miner`            | Pauses the mining operation.            | `mdi:pause`          |
 | `button.resume_miner`           | Resumes the mining operation.           | `mdi:play`           |
+
+### Sensors
+
+Sensors are automatically updated every 30 seconds.
+
+#### Summary Sensors
+
+These sensors provide an overview of the entire miner.
+
+| Entity ID                   | Description                                                | Unit |
+| --------------------------- | ---------------------------------------------------------- | ---- |
+| `sensor.total_hashrate`     | Total real-time hashrate of all boards combined.           | TH/s |
+| `sensor.chip_temperature`   | The highest temperature of any chip across all hashboards. | °C   |
+| `sensor.board_temperature`  | The highest temperature of any board across all hashboards.| °C   |
+
+#### Per-Hashboard Sensors
+
+The following sensors are created for **each** hashboard detected by the miner. The `_n_` in the entity ID will be replaced by the board ID (e.g., `_1_`, `_2_`, etc.).
+
+| Entity ID                           | Description                                       | Unit |
+| ----------------------------------- | ------------------------------------------------- | ---- |
+| `sensor.hashboard_n_hashrate`       | The real-time hashrate for this specific board.   | TH/s |
+| `sensor.hashboard_n_chip_temp`      | Highest chip temperature for this specific board. | °C   |
+| `sensor.hashboard_n_board_temp`     | The surface temperature of this specific board.   | °C   |
 
 ## API Reference
 
