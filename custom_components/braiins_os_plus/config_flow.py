@@ -4,6 +4,7 @@ import voluptuous as vol
 import logging
 import asyncio
 import aiohttp
+import time  # Import the time library
 
 from homeassistant import config_entries
 from homeassistant.core import callback
@@ -24,7 +25,6 @@ class BraiinsOSPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             miner_ip = user_input["miner_ip"]
             username = user_input["username"]
-            # Get the password, which could be None if the field is empty
             password = user_input.get("password")
 
             if not username:
@@ -32,16 +32,7 @@ class BraiinsOSPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     url = f"http://{miner_ip}/api/v1/auth/login"
-
-                    # ### THE FIX IS HERE ###
-                    # Always include the password key. If the password is None or empty,
-                    # send an empty string.
-                    payload = {
-                        "username": username,
-                        "password": password or ""
-                    }
-                    _LOGGER.debug("Sending login payload: %s", payload)
-
+                    payload = {"username": username, "password": password or ""}
                     session = async_get_clientsession(self.hass)
 
                     async with asyncio.timeout(10):
@@ -49,16 +40,24 @@ class BraiinsOSPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                             if response.status == 200:
                                 data = await response.json()
                                 token = data.get("token")
+                                timeout_s = data.get("timeout_s", 3600)
+
+                                # Calculate the expiration time (with a 60-second buffer)
+                                expires_at = time.time() + timeout_s - 60
 
                                 await self.async_set_unique_id(miner_ip)
                                 self._abort_if_unique_id_configured()
 
+                                # ### THE FIX IS HERE ###
+                                # Store everything needed for re-authentication
                                 return self.async_create_entry(
                                     title=miner_ip,
                                     data={
                                         "miner_ip": miner_ip,
                                         "username": username,
+                                        "password": password or "",
                                         "token": token,
+                                        "expires_at": expires_at,
                                     },
                                 )
                             elif response.status == 401:
@@ -95,7 +94,6 @@ class BraiinsOSPlusConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         return OptionsFlowHandler(config_entry)
-
 
 class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
