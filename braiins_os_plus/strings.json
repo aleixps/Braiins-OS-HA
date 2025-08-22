@@ -1,0 +1,22 @@
+{
+    "config": {
+      "step": {
+        "user": {
+          "title": "Braiins Miner Login",
+          "data": {
+            "miner_ip": "Miner IP",
+            "username": "Username",
+            "password": "Password (optional)"
+          }
+        }
+      },
+      "error": {
+        "cannot_connect": "Failed to connect to the miner. Please check the IP address.",
+        "invalid_auth": "Invalid username or password.",
+        "unknown": "An unknown error occurred."
+      },
+      "abort": {
+        "already_configured": "This miner is already configured."
+      }
+    }
+}
