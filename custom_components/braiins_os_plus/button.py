@@ -12,14 +12,15 @@ from .api import BraiinsAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Braiins OS+ buttons from a config entry."""
-    api = hass.data[DOMAIN][config_entry.entry_id]
+    # ### THE FIX IS HERE ###
+    # Retrieve the API object from the dictionary stored in hass.data
+    api = hass.data[DOMAIN][config_entry.entry_id]["api"]
 
     buttons = [
         IncrementPowerButton(api, config_entry),
@@ -37,6 +38,9 @@ class BraiinsButton(ButtonEntity):
         self._api = api
         self._config_entry = config_entry
         self._attr_has_entity_name = True
+        # Set a unique_id prefix for all buttons
+        self._attr_unique_id = f"{config_entry.entry_id}_{self.entity_description.key}"
+        self.entity_description = self.entity_description
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -48,10 +52,8 @@ class BraiinsButton(ButtonEntity):
             model="Miner with Braiins OS+",
         )
 
-
 class IncrementPowerButton(BraiinsButton):
     """Button to increment the power target."""
-
     _attr_name = "Increment Power Target"
     _attr_unique_id = "increment_power_target"
     _attr_icon = "mdi:arrow-up-bold"
@@ -60,10 +62,8 @@ class IncrementPowerButton(BraiinsButton):
         """Handle the button press."""
         await self._api.increment_power_target()
 
-
 class DecrementPowerButton(BraiinsButton):
     """Button to decrement the power target."""
-
     _attr_name = "Decrement Power Target"
     _attr_unique_id = "decrement_power_target"
     _attr_icon = "mdi:arrow-down-bold"
@@ -72,10 +72,8 @@ class DecrementPowerButton(BraiinsButton):
         """Handle the button press."""
         await self._api.decrement_power_target()
 
-
 class PauseMinerButton(BraiinsButton):
     """Button to pause the miner."""
-
     _attr_name = "Pause Miner"
     _attr_unique_id = "pause_miner"
     _attr_icon = "mdi:pause"
@@ -84,10 +82,8 @@ class PauseMinerButton(BraiinsButton):
         """Handle the button press."""
         await self._api.pause_mining()
 
-
 class ResumeMinerButton(BraiinsButton):
     """Button to resume the miner."""
-
     _attr_name = "Resume Miner"
     _attr_unique_id = "resume_miner"
     _attr_icon = "mdi:play"
