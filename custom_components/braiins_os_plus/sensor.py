@@ -47,7 +47,6 @@ async def async_setup_entry(
         TotalHashrateSensor(coordinator),
         HighestChipTempSensor(coordinator),
         HighestBoardTempSensor(coordinator),
-        # ### NEW SENSORS ###
         MinerConsumptionSensor(coordinator),
         MinerEfficiencySensor(coordinator),
     ])
@@ -115,8 +114,6 @@ class MinerEfficiencySensor(BraiinsSensor):
         efficiency = self.coordinator.data.get("power_stats", {}).get("efficiency", {}).get("joule_per_terahash")
         return round(efficiency, 2) if efficiency is not None else None
 
-# (The rest of the sensor classes: TotalHashrateSensor, HighestChipTempSensor, etc. remain unchanged)
-# ...
 class TotalHashrateSensor(BraiinsSensor):
     """Sensor for the total real hashrate of all boards."""
     def __init__(self, coordinator):
@@ -210,4 +207,56 @@ class HashboardSensor(BraiinsSensor):
 
 class HashboardChipTempSensor(HashboardSensor):
     """Sensor for a single hashboard's highest chip temperature."""
-  
+    # ### THE FIX IS HERE: __init__ method is present ###
+    def __init__(self, coordinator, board_id: str):
+        super().__init__(coordinator, board_id, "chip_temp")
+        self._attr_name = f"Hashboard {board_id} Chip Temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        if not self.board_data:
+            return None
+        return self.board_data.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
+
+
+class HashboardBoardTempSensor(HashboardSensor):
+    """Sensor for a single hashboard's board temperature."""
+    # ### THE FIX IS HERE: __init__ method is present ###
+    def __init__(self, coordinator, board_id: str):
+        super().__init__(coordinator, board_id, "board_temp")
+        self._attr_name = f"Hashboard {board_id} Board Temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        if not self.board_data:
+            return None
+        return self.board_data.get("board_temp", {}).get("degree_c")
+
+
+class HashboardHashrateSensor(HashboardSensor):
+    """Sensor for a single hashboard's hashrate."""
+    # ### THE FIX IS HERE: __init__ method is present ###
+    def __init__(self, coordinator, board_id: str):
+        super().__init__(coordinator, board_id, "hashrate")
+        self._attr_name = f"Hashboard {board_id} Hashrate"
+        self._attr_native_unit_of_measurement = TERAHASH_PER_SECOND
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_icon = "mdi:speedometer"
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the hashrate in TH/s."""
+        if not self.board_data:
+            return None
+        
+        hashrate_ghs = self.board_data.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second")
+        if hashrate_ghs is None:
+            return None
+        
+        return round(hashrate_ghs / 1000, 2)
