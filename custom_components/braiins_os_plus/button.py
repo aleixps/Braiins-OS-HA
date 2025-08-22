@@ -18,8 +18,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Braiins OS+ buttons from a config entry."""
-    # ### THE FIX IS HERE ###
-    # Retrieve the API object from the dictionary stored in hass.data
+    # This line is the correct fix from the previous step
     api = hass.data[DOMAIN][config_entry.entry_id]["api"]
 
     buttons = [
@@ -35,12 +34,10 @@ class BraiinsButton(ButtonEntity):
     """Base class for a Braiins OS+ button."""
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
+        """Initialize the button."""
         self._api = api
         self._config_entry = config_entry
         self._attr_has_entity_name = True
-        # Set a unique_id prefix for all buttons
-        self._attr_unique_id = f"{config_entry.entry_id}_{self.entity_description.key}"
-        self.entity_description = self.entity_description
 
     @property
     def device_info(self) -> DeviceInfo:
@@ -52,9 +49,12 @@ class BraiinsButton(ButtonEntity):
             model="Miner with Braiins OS+",
         )
 
+# ### REVERTING TO THE SIMPLE AND CORRECT BUTTON DEFINITIONS ###
+
 class IncrementPowerButton(BraiinsButton):
     """Button to increment the power target."""
     _attr_name = "Increment Power Target"
+    # The unique ID is now composed of the entry_id and a fixed string
     _attr_unique_id = "increment_power_target"
     _attr_icon = "mdi:arrow-up-bold"
 
