@@ -1,6 +1,6 @@
 # Braiins OS+ Integration for Home Assistant
 
-[![hacs_badge](https://imgshields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/)
 [![Project Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/aleixps/Braiins-OS-HA)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -9,8 +9,9 @@ This is a custom integration for Home Assistant that allows you to control and m
 ## Features
 
 -   **Local Control**: Connects directly to your miner via its local IP address. No cloud services are required.
--   **Detailed Monitoring**: Provides sensor entities for key metrics, updated automatically.
+-   **Detailed Monitoring**: Provides sensor entities for key metrics with a rapid 5-second update interval.
     -   Total hashrate (TH/s).
+    -   Real-time power consumption (W) and energy efficiency (J/TH).
     -   Highest chip and board temperatures.
     -   Per-hashboard hashrate, chip temperature, and board temperature.
 -   **Simple Controls**: Provides button entities to perform key actions:
@@ -84,7 +85,7 @@ The integration creates a single device representing your miner, with the follow
 
 ### Sensors
 
-Sensors are automatically updated every 30 seconds.
+Sensors are automatically updated every **5 seconds**.
 
 #### Summary Sensors
 
@@ -93,6 +94,8 @@ These sensors provide an overview of the entire miner.
 | Entity ID                   | Description                                                | Unit |
 | --------------------------- | ---------------------------------------------------------- | ---- |
 | `sensor.total_hashrate`     | Total real-time hashrate of all boards combined.           | TH/s |
+| `sensor.miner_consumption`  | Real-time power consumption of the miner.                  | W    |
+| `sensor.miner_efficiency`   | Energy efficiency of the miner.                            | J/TH |
 | `sensor.chip_temperature`   | The highest temperature of any chip across all hashboards. | °C   |
 | `sensor.board_temperature`  | The highest temperature of any board across all hashboards.| °C   |
 
@@ -105,6 +108,22 @@ The following sensors are created for **each** hashboard detected by the miner. 
 | `sensor.hashboard_n_hashrate`       | The real-time hashrate for this specific board.   | TH/s |
 | `sensor.hashboard_n_chip_temp`      | Highest chip temperature for this specific board. | °C   |
 | `sensor.hashboard_n_board_temp`     | The surface temperature of this specific board.   | °C   |
+
+### Creating an Energy Sensor (kWh)
+
+To track total energy consumption over time and use it in the Home Assistant Energy Dashboard, you need to create a helper sensor that integrates the `Miner Consumption` sensor.
+
+1.  Navigate to **Settings** > **Devices & Services** > **Helpers**.
+2.  Click the **"+ Create Helper"** button.
+3.  Find and select **"Integration - Riemann sum integral sensor"**.
+4.  Fill out the form:
+    -   **Input sensor**: Select `sensor.miner_consumption`.
+    -   **Name**: Give it a friendly name, like `Miner Energy`.
+    -   **Metric prefix**: Select **k** (for kilo).
+    -   **Unit of time**: Select **Hours**.
+5.  Click **"Create"**.
+
+This will create a new `sensor.miner_energy` entity that tracks total energy usage in kWh, which you can then add to your Energy Dashboard.
 
 ## API Reference
 
