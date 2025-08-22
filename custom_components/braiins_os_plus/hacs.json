@@ -1,7 +1,5 @@
 {
   "name": "Braiins OS+",
   "content_in_root": false,
-  "render_readme": true,
-  "domains": ["braiins_os_plus"],
   "homeassistant": "2023.11.0"
 }
