@@ -36,11 +36,12 @@ async def async_setup_entry(
     if coordinator.data and "hashboards" in coordinator.data:
         for board in coordinator.data.get("hashboards", []):
             board_id = board.get("id")
-            sensors.extend([
-                HashboardChipTempSensor(coordinator, board_id),
-                HashboardBoardTempSensor(coordinator, board_id),
-                HashboardHashrateSensor(coordinator, board_id),
-            ])
+            if board_id is not None:
+                sensors.extend([
+                    HashboardChipTempSensor(coordinator, board_id),
+                    HashboardBoardTempSensor(coordinator, board_id),
+                    HashboardHashrateSensor(coordinator, board_id),
+                ])
     
     # Create aggregate and stats sensors
     sensors.extend([
@@ -65,7 +66,6 @@ class BraiinsSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information for the sensors."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._config_entry.entry_id)},
             name=f"Braiins OS+ Miner ({self._config_entry.data['miner_ip']})",
@@ -93,10 +93,10 @@ class MinerConsumptionSensor(BraiinsSensor):
     @property
     def native_value(self) -> int | None:
         """Return the power consumption in Watts."""
-        # ### THE FIX IS HERE: Added safety check ###
-        if self.coordinator.data is None:
-            return None
-        return self.coordinator.data.get("power_stats", {}).get("approximated_consumption", {}).get("watt")
+        if self.coordinator.data and (power_stats := self.coordinator.data.get("power_stats")):
+            if (consumption := power_stats.get("approximated_consumption")):
+                return consumption.get("watt")
+        return None
 
 class MinerEfficiencySensor(BraiinsSensor):
     """Sensor for the miner's efficiency."""
@@ -110,11 +110,11 @@ class MinerEfficiencySensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the efficiency in J/TH."""
-        # ### THE FIX IS HERE: Added safety check ###
-        if self.coordinator.data is None:
-            return None
-        efficiency = self.coordinator.data.get("power_stats", {}).get("efficiency", {}).get("joule_per_terahash")
-        return round(efficiency, 2) if efficiency is not None else None
+        if self.coordinator.data and (power_stats := self.coordinator.data.get("power_stats")):
+            if (efficiency_stats := power_stats.get("efficiency")):
+                if (efficiency := efficiency_stats.get("joule_per_terahash")) is not None:
+                    return round(efficiency, 2)
+        return None
 
 class TotalHashrateSensor(BraiinsSensor):
     """Sensor for the total real hashrate of all boards."""
@@ -128,15 +128,13 @@ class TotalHashrateSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the total hashrate in TH/s."""
-        # ### THE FIX IS HERE: Added safety check ###
-        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
-            return None
-        
-        total_ghs = sum(
-            board.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second", 0)
-            for board in self.coordinator.data.get("hashboards", [])
-        )
-        return round(total_ghs / 1000, 2)
+        if self.coordinator.data and (hashboards := self.coordinator.data.get("hashboards")):
+            total_ghs = sum(
+                board.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second", 0)
+                for board in hashboards
+            )
+            return round(total_ghs / 1000, 2)
+        return None
 
 class HighestChipTempSensor(BraiinsSensor):
     """Sensor for the highest chip temperature across all boards."""
@@ -150,16 +148,14 @@ class HighestChipTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest chip temperature."""
-        # ### THE FIX IS HERE: Added safety check ###
-        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
-            return None
-            
-        temps = [
-            board.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
-            for board in self.coordinator.data.get("hashboards", [])
-        ]
-        valid_temps = [temp for temp in temps if temp is not None]
-        return max(valid_temps) if valid_temps else None
+        if self.coordinator.data and (hashboards := self.coordinator.data.get("hashboards")):
+            temps = [
+                board.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
+                for board in hashboards
+            ]
+            valid_temps = [temp for temp in temps if temp is not None]
+            return max(valid_temps) if valid_temps else None
+        return None
 
 class HighestBoardTempSensor(BraiinsSensor):
     """Sensor for the highest board temperature across all boards."""
@@ -173,20 +169,18 @@ class HighestBoardTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest board temperature."""
-        # ### THE FIX IS HERE: Added safety check ###
-        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
-            return None
-        
-        temps = [
-            board.get("board_temp", {}).get("degree_c")
-            for board in self.coordinator.data.get("hashboards", [])
-        ]
-        valid_temps = [temp for temp in temps if temp is not None]
-        return max(valid_temps) if valid_temps else None
+        if self.coordinator.data and (hashboards := self.coordinator.data.get("hashboards")):
+            temps = [
+                board.get("board_temp", {}).get("degree_c")
+                for board in hashboards
+            ]
+            valid_temps = [temp for temp in temps if temp is not None]
+            return max(valid_temps) if valid_temps else None
+        return None
 
 
 # --- Per-Hashboard Sensors ---
-# (These were already safe and do not need changes)
+
 class HashboardSensor(BraiinsSensor):
     """Base class for a sensor tied to a specific hashboard."""
     def __init__(self, coordinator, board_id: str, entity_suffix: str):
@@ -196,12 +190,10 @@ class HashboardSensor(BraiinsSensor):
     @property
     def board_data(self) -> dict[str, Any] | None:
         """Return the data for this specific hashboard."""
-        if not self.coordinator.data or "hashboards" not in self.coordinator.data:
-            return None
-        
-        for board in self.coordinator.data["hashboards"]:
-            if board.get("id") == self.board_id:
-                return board
+        if self.coordinator.data and (hashboards := self.coordinator.data.get("hashboards")):
+            for board in hashboards:
+                if board.get("id") == self.board_id:
+                    return board
         return None
 
     @property
@@ -220,9 +212,10 @@ class HashboardChipTempSensor(HashboardSensor):
 
     @property
     def native_value(self) -> float | None:
-        if not self.board_data:
-            return None
-        return self.board_data.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
+        if self.board_data and (chip_temp := self.board_data.get("highest_chip_temp")):
+            if (temp := chip_temp.get("temperature")):
+                return temp.get("degree_c")
+        return None
 
 class HashboardBoardTempSensor(HashboardSensor):
     """Sensor for a single hashboard's board temperature."""
@@ -235,9 +228,9 @@ class HashboardBoardTempSensor(HashboardSensor):
 
     @property
     def native_value(self) -> float | None:
-        if not self.board_data:
-            return None
-        return self.board_data.get("board_temp", {}).get("degree_c")
+        if self.board_data and (board_temp := self.board_data.get("board_temp")):
+            return board_temp.get("degree_c")
+        return None
 
 class HashboardHashrateSensor(HashboardSensor):
     """Sensor for a single hashboard's hashrate."""
@@ -251,11 +244,9 @@ class HashboardHashrateSensor(HashboardSensor):
     @property
     def native_value(self) -> float | None:
         """Return the hashrate in TH/s."""
-        if not self.board_data:
-            return None
-        
-        hashrate_ghs = self.board_data.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second")
-        if hashrate_ghs is None:
-            return None
-        
-        return round(hashrate_ghs / 1000, 2)
+        if self.board_data and (stats := self.board_data.get("stats")):
+            if (real_hash := stats.get("real_hashrate")):
+                if (last_5s := real_hash.get("last_5s")):
+                    if (hashrate_ghs := last_5s.get("gigahash_per_second")) is not None:
+                        return round(hashrate_ghs / 1000, 2)
+        return None
