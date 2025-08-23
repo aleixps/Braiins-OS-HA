@@ -32,7 +32,7 @@ async def async_setup_entry(
     
     sensors = []
 
-    # Create sensors for each hashboard if data is available
+    # Create sensors for each hashboard if data is available on first load
     if coordinator.data and "hashboards" in coordinator.data:
         for board in coordinator.data.get("hashboards", []):
             board_id = board.get("id")
@@ -93,7 +93,8 @@ class MinerConsumptionSensor(BraiinsSensor):
     @property
     def native_value(self) -> int | None:
         """Return the power consumption in Watts."""
-        if not self.coordinator.data:
+        # ### THE FIX IS HERE: Added safety check ###
+        if self.coordinator.data is None:
             return None
         return self.coordinator.data.get("power_stats", {}).get("approximated_consumption", {}).get("watt")
 
@@ -109,7 +110,8 @@ class MinerEfficiencySensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the efficiency in J/TH."""
-        if not self.coordinator.data:
+        # ### THE FIX IS HERE: Added safety check ###
+        if self.coordinator.data is None:
             return None
         efficiency = self.coordinator.data.get("power_stats", {}).get("efficiency", {}).get("joule_per_terahash")
         return round(efficiency, 2) if efficiency is not None else None
@@ -126,12 +128,13 @@ class TotalHashrateSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the total hashrate in TH/s."""
-        if not self.coordinator.data or "hashboards" not in self.coordinator.data:
+        # ### THE FIX IS HERE: Added safety check ###
+        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
             return None
         
         total_ghs = sum(
             board.get("stats", {}).get("real_hashrate", {}).get("last_5s", {}).get("gigahash_per_second", 0)
-            for board in self.coordinator.data["hashboards"]
+            for board in self.coordinator.data.get("hashboards", [])
         )
         return round(total_ghs / 1000, 2)
 
@@ -147,12 +150,13 @@ class HighestChipTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest chip temperature."""
-        if not self.coordinator.data or "hashboards" not in self.coordinator.data:
+        # ### THE FIX IS HERE: Added safety check ###
+        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
             return None
             
         temps = [
             board.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
-            for board in self.coordinator.data["hashboards"]
+            for board in self.coordinator.data.get("hashboards", [])
         ]
         valid_temps = [temp for temp in temps if temp is not None]
         return max(valid_temps) if valid_temps else None
@@ -169,19 +173,20 @@ class HighestBoardTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest board temperature."""
-        if not self.coordinator.data or "hashboards" not in self.coordinator.data:
+        # ### THE FIX IS HERE: Added safety check ###
+        if self.coordinator.data is None or "hashboards" not in self.coordinator.data:
             return None
         
         temps = [
             board.get("board_temp", {}).get("degree_c")
-            for board in self.coordinator.data["hashboards"]
+            for board in self.coordinator.data.get("hashboards", [])
         ]
         valid_temps = [temp for temp in temps if temp is not None]
         return max(valid_temps) if valid_temps else None
 
 
 # --- Per-Hashboard Sensors ---
-
+# (These were already safe and do not need changes)
 class HashboardSensor(BraiinsSensor):
     """Base class for a sensor tied to a specific hashboard."""
     def __init__(self, coordinator, board_id: str, entity_suffix: str):
@@ -204,10 +209,8 @@ class HashboardSensor(BraiinsSensor):
         """Return True if the board data is available."""
         return super().available and self.board_data is not None
 
-
 class HashboardChipTempSensor(HashboardSensor):
     """Sensor for a single hashboard's highest chip temperature."""
-    # ### THE FIX IS HERE: __init__ method is present ###
     def __init__(self, coordinator, board_id: str):
         super().__init__(coordinator, board_id, "chip_temp")
         self._attr_name = f"Hashboard {board_id} Chip Temp"
@@ -221,10 +224,8 @@ class HashboardChipTempSensor(HashboardSensor):
             return None
         return self.board_data.get("highest_chip_temp", {}).get("temperature", {}).get("degree_c")
 
-
 class HashboardBoardTempSensor(HashboardSensor):
     """Sensor for a single hashboard's board temperature."""
-    # ### THE FIX IS HERE: __init__ method is present ###
     def __init__(self, coordinator, board_id: str):
         super().__init__(coordinator, board_id, "board_temp")
         self._attr_name = f"Hashboard {board_id} Board Temp"
@@ -238,10 +239,8 @@ class HashboardBoardTempSensor(HashboardSensor):
             return None
         return self.board_data.get("board_temp", {}).get("degree_c")
 
-
 class HashboardHashrateSensor(HashboardSensor):
     """Sensor for a single hashboard's hashrate."""
-    # ### THE FIX IS HERE: __init__ method is present ###
     def __init__(self, coordinator, board_id: str):
         super().__init__(coordinator, board_id, "hashrate")
         self._attr_name = f"Hashboard {board_id} Hashrate"
