@@ -7,7 +7,6 @@ import time
 from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
-# ### THE FIX IS HERE: Import UpdateFailed ###
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,7 +26,7 @@ class BraiinsAPI:
 
     async def async_relogin(self) -> bool:
         """Perform a login to get a new token. Raises UpdateFailed on connection error."""
-        _LOGGER.info("Braiins OS+ token expired or is about to expire. Re-authenticating.")
+        # ### THE FIX IS HERE: The premature log message has been removed. ###
         url = f"{self._base_url}/auth/login"
         payload = {
             "username": self._entry.data["username"],
@@ -43,7 +42,8 @@ class BraiinsAPI:
                     new_timeout = data.get("timeout_s", 3600)
                     new_expires_at = time.time() + new_timeout - 60
 
-                    _LOGGER.info("Successfully re-authenticated and got a new token.")
+                    # We now only log a message after a successful re-authentication.
+                    _LOGGER.info("Successfully re-authenticated with Braiins OS+ and got a new token.")
                     
                     self._token = new_token
                     self._headers = {"Authorization": self._token}
@@ -53,10 +53,11 @@ class BraiinsAPI:
                     
                     return True
         
-        # ### THE FIX IS HERE: Catch connection errors and raise UpdateFailed ###
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            # We raise UpdateFailed, and the coordinator handles the error logging.
             raise UpdateFailed(f"Failed to re-authenticate with Braiins OS+: {err}") from err
         except Exception as err:
+            # This will catch other unexpected errors during relogin
             _LOGGER.error("An unexpected error occurred during re-authentication: %s", err)
             return False
 
@@ -80,7 +81,6 @@ class BraiinsAPI:
                     response.raise_for_status()
                     return await response.json()
         
-        # ### THE FIX IS HERE: Catch connection errors and raise UpdateFailed ###
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise UpdateFailed(f"Failed to get data from {url}: {err}") from err
         except Exception as err:
@@ -109,7 +109,6 @@ class BraiinsAPI:
 
     async def _make_request(self, method: str, endpoint: str, data: dict | None = None) -> bool:
         """Make a PUT or PATCH request for button presses."""
-        # For button presses, we still log the error and return False, as it's a direct user action.
         if not await self._is_token_valid_and_renew():
             return False
         
