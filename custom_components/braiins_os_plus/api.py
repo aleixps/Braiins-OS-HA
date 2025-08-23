@@ -25,8 +25,7 @@ class BraiinsAPI:
         self._lock = asyncio.Lock()
 
     async def async_relogin(self) -> bool:
-        """Perform a login to get a new token. Raises UpdateFailed on connection error."""
-        # ### THE FIX IS HERE: The premature log message has been removed. ###
+        """Perform a login to get a new token."""
         url = f"{self._base_url}/auth/login"
         payload = {
             "username": self._entry.data["username"],
@@ -42,7 +41,6 @@ class BraiinsAPI:
                     new_timeout = data.get("timeout_s", 3600)
                     new_expires_at = time.time() + new_timeout - 60
 
-                    # We now only log a message after a successful re-authentication.
                     _LOGGER.info("Successfully re-authenticated with Braiins OS+ and got a new token.")
                     
                     self._token = new_token
@@ -54,10 +52,9 @@ class BraiinsAPI:
                     return True
         
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            # We raise UpdateFailed, and the coordinator handles the error logging.
-            raise UpdateFailed(f"Failed to re-authenticate with Braiins OS+: {err}") from err
+            _LOGGER.warning("Failed to re-authenticate with Braiins OS+: %s", err)
+            return False
         except Exception as err:
-            # This will catch other unexpected errors during relogin
             _LOGGER.error("An unexpected error occurred during re-authentication: %s", err)
             return False
 
@@ -68,10 +65,10 @@ class BraiinsAPI:
                 return await self.async_relogin()
         return True
 
-    async def _make_get_request(self, endpoint: str) -> dict[str, Any]:
-        """Make a GET request and return the JSON response. Raises UpdateFailed on connection error."""
+    async def _make_get_request(self, endpoint: str) -> dict[str, Any] | None:
+        """Make a GET request and return the JSON response, or None on failure."""
         if not await self._is_token_valid_and_renew():
-            raise UpdateFailed("Token is invalid and could not be renewed.")
+            return None
         
         url = f"{self._base_url}/{endpoint}"
         _LOGGER.debug("Sending GET request to %s", url)
@@ -82,13 +79,15 @@ class BraiinsAPI:
                     return await response.json()
         
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            raise UpdateFailed(f"Failed to get data from {url}: {err}") from err
+            # Log a warning for a partial failure, but don't stop the whole update.
+            _LOGGER.warning("Failed to get data from %s: %s", url, err)
+            return None
         except Exception as err:
             _LOGGER.exception("An unexpected error occurred while getting data from %s", url)
-            raise UpdateFailed(f"An unexpected error occurred while getting data: {err}") from err
+            return None
 
     async def async_update_data(self) -> dict[str, Any]:
-        """Fetch data from all endpoints and combine them."""
+        """Fetch data from all endpoints and combine them. Raise UpdateFailed only if all fail."""
         results = await asyncio.gather(
             self._make_get_request("miner/hw/hashboards"),
             self._make_get_request("miner/stats")
@@ -96,14 +95,16 @@ class BraiinsAPI:
         
         hashboard_data, stats_data = results
         
+        # If all endpoints failed, then we raise UpdateFailed.
+        if not hashboard_data and not stats_data:
+            raise UpdateFailed("Failed to fetch any data from the miner.")
+
+        # Otherwise, we proceed with whatever data we have.
         combined_data = {}
         if hashboard_data:
             combined_data.update(hashboard_data)
         if stats_data:
             combined_data.update(stats_data)
-
-        if not combined_data:
-            raise UpdateFailed("Failed to fetch any data from the miner.")
 
         return combined_data
 
