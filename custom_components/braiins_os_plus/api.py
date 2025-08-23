@@ -7,6 +7,8 @@ import time
 from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
+# ### THE FIX IS HERE: Import UpdateFailed ###
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class BraiinsAPI:
         self._lock = asyncio.Lock()
 
     async def async_relogin(self) -> bool:
-        """Perform a login to get a new token."""
+        """Perform a login to get a new token. Raises UpdateFailed on connection error."""
         _LOGGER.info("Braiins OS+ token expired or is about to expire. Re-authenticating.")
         url = f"{self._base_url}/auth/login"
         payload = {
@@ -50,9 +52,12 @@ class BraiinsAPI:
                     self._hass.config_entries.async_update_entry(self._entry, data=new_data)
                     
                     return True
-
+        
+        # ### THE FIX IS HERE: Catch connection errors and raise UpdateFailed ###
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise UpdateFailed(f"Failed to re-authenticate with Braiins OS+: {err}") from err
         except Exception as err:
-            _LOGGER.error("Failed to re-authenticate with Braiins OS+: %s", err)
+            _LOGGER.error("An unexpected error occurred during re-authentication: %s", err)
             return False
 
     async def _is_token_valid_and_renew(self) -> bool:
@@ -62,10 +67,10 @@ class BraiinsAPI:
                 return await self.async_relogin()
         return True
 
-    async def _make_get_request(self, endpoint: str) -> dict[str, Any] | None:
-        """Make a GET request and return the JSON response."""
+    async def _make_get_request(self, endpoint: str) -> dict[str, Any]:
+        """Make a GET request and return the JSON response. Raises UpdateFailed on connection error."""
         if not await self._is_token_valid_and_renew():
-            return None
+            raise UpdateFailed("Token is invalid and could not be renewed.")
         
         url = f"{self._base_url}/{endpoint}"
         _LOGGER.debug("Sending GET request to %s", url)
@@ -74,17 +79,16 @@ class BraiinsAPI:
                 async with self._session.get(url, headers=self._headers) as response:
                     response.raise_for_status()
                     return await response.json()
+        
+        # ### THE FIX IS HERE: Catch connection errors and raise UpdateFailed ###
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            _LOGGER.error("Failed to get data from %s: %s", url, err)
-            return None
+            raise UpdateFailed(f"Failed to get data from {url}: {err}") from err
         except Exception as err:
             _LOGGER.exception("An unexpected error occurred while getting data from %s", url)
-            return None
+            raise UpdateFailed(f"An unexpected error occurred while getting data: {err}") from err
 
-    # ### NEW MASTER UPDATE METHOD ###
     async def async_update_data(self) -> dict[str, Any]:
         """Fetch data from all endpoints and combine them."""
-        # Use asyncio.gather to fetch from both endpoints concurrently
         results = await asyncio.gather(
             self._make_get_request("miner/hw/hashboards"),
             self._make_get_request("miner/stats")
@@ -92,17 +96,20 @@ class BraiinsAPI:
         
         hashboard_data, stats_data = results
         
-        # Combine the data into a single dictionary
         combined_data = {}
         if hashboard_data:
-            combined_data.update(hashboard_data) # Adds "hashboards": [...]
+            combined_data.update(hashboard_data)
         if stats_data:
-            combined_data.update(stats_data) # Adds "pool_stats", "miner_stats", etc.
+            combined_data.update(stats_data)
+
+        if not combined_data:
+            raise UpdateFailed("Failed to fetch any data from the miner.")
 
         return combined_data
 
     async def _make_request(self, method: str, endpoint: str, data: dict | None = None) -> bool:
-        """Make a PUT or PATCH request, ensuring the token is valid first."""
+        """Make a PUT or PATCH request for button presses."""
+        # For button presses, we still log the error and return False, as it's a direct user action.
         if not await self._is_token_valid_and_renew():
             return False
         
@@ -125,17 +132,13 @@ class BraiinsAPI:
             return False
 
     async def increment_power_target(self, value: int = 250) -> bool:
-        """Increment the power target by a given value."""
         return await self._make_request("patch", "performance/power-target/increment", {"watt": value})
 
     async def decrement_power_target(self, value: int = 250) -> bool:
-        """Decrement the power target by a given value."""
         return await self._make_request("patch", "performance/power-target/decrement", {"watt": value})
 
     async def pause_mining(self) -> bool:
-        """Pause the mining operation."""
         return await self._make_request("put", "actions/pause")
 
     async def resume_mining(self) -> bool:
-        """Resume the mining operation."""
         return await self._make_request("put", "actions/resume")
