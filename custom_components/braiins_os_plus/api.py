@@ -62,6 +62,7 @@ class BraiinsAPI:
         """Helper to check token validity and renew if needed."""
         async with self._lock:
             if time.time() > self._entry.data["expires_at"]:
+                _LOGGER.info("Token expired based on time, attempting re-login.")
                 return await self.async_relogin()
         return True
 
@@ -75,11 +76,25 @@ class BraiinsAPI:
         try:
             async with asyncio.timeout(10):
                 async with self._session.get(url, headers=self._headers) as response:
+                    # ### START OF FIX ###
+                    # Check for 401 Unauthorized and attempt re-login
+                    if response.status == 401:
+                        _LOGGER.info("Token rejected by miner (401), attempting re-login.")
+                        async with self._lock:
+                            if await self.async_relogin():
+                                _LOGGER.info("Re-login successful, retrying request for %s", url)
+                                async with self._session.get(url, headers=self._headers) as retry_response:
+                                    retry_response.raise_for_status()
+                                    return await retry_response.json()
+                            
+                            _LOGGER.warning("Re-login failed after 401, aborting request for %s", url)
+                            return None
+                    # ### END OF FIX ###
+
                     response.raise_for_status()
                     return await response.json()
         
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-            # Log a warning for a partial failure, but don't stop the whole update.
             _LOGGER.warning("Failed to get data from %s: %s", url, err)
             return None
         except Exception as err:
@@ -95,11 +110,9 @@ class BraiinsAPI:
         
         hashboard_data, stats_data = results
         
-        # If all endpoints failed, then we raise UpdateFailed.
         if not hashboard_data and not stats_data:
             raise UpdateFailed("Failed to fetch any data from the miner.")
 
-        # Otherwise, we proceed with whatever data we have.
         combined_data = {}
         if hashboard_data:
             combined_data.update(hashboard_data)
@@ -118,6 +131,25 @@ class BraiinsAPI:
         try:
             async with asyncio.timeout(10):
                 async with self._session.request(method, url, headers=self._headers, json=data) as response:
+                    # ### START OF FIX ###
+                    # Check for 401 Unauthorized and attempt re-login for command actions
+                    if response.status == 401:
+                        _LOGGER.info("Token rejected by miner (401) for command, attempting re-login.")
+                        async with self._lock:
+                            if await self.async_relogin():
+                                _LOGGER.info("Re-login successful, retrying command for %s", url)
+                                async with self._session.request(method, url, headers=self._headers, json=data) as retry_response:
+                                    if retry_response.status == 422:
+                                        response_text = await retry_response.text()
+                                        _LOGGER.error("Unprocessable Entity on retry for %s. Miner Response: %s", url, response_text)
+                                    retry_response.raise_for_status()
+                                    _LOGGER.info("Successfully sent command to %s on retry", url)
+                                    return True
+                            
+                            _LOGGER.error("Re-login failed after 401, aborting command for %s", url)
+                            return False
+                    # ### END OF FIX ###
+
                     if response.status == 422:
                         response_text = await response.text()
                         _LOGGER.error("Unprocessable Entity for %s. Miner Response: %s", url, response_text)
