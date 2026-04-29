@@ -17,8 +17,6 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up the Braiins OS+ buttons from a config entry."""
-    # This line is the correct fix from the previous step
     api = hass.data[DOMAIN][config_entry.entry_id]["api"]
 
     buttons = [
@@ -31,17 +29,14 @@ async def async_setup_entry(
 
 
 class BraiinsButton(ButtonEntity):
-    """Base class for a Braiins OS+ button."""
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
-        """Initialize the button."""
         self._api = api
         self._config_entry = config_entry
         self._attr_has_entity_name = True
 
     @property
     def device_info(self) -> DeviceInfo:
-        """Return device information for the buttons."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._config_entry.entry_id)},
             name=f"Braiins OS+ Miner ({self._config_entry.data['miner_ip']})",
@@ -49,45 +44,48 @@ class BraiinsButton(ButtonEntity):
             model="Miner with Braiins OS+",
         )
 
-# ### REVERTING TO THE SIMPLE AND CORRECT BUTTON DEFINITIONS ###
-
 class IncrementPowerButton(BraiinsButton):
-    """Button to increment the power target."""
     _attr_name = "Increment Power Target"
-    # The unique ID is now composed of the entry_id and a fixed string
-    _attr_unique_id = "increment_power_target"
     _attr_icon = "mdi:arrow-up-bold"
 
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
+        super().__init__(api, config_entry)
+        # Unique ID now includes the entry_id to allow multiple miners
+        self._attr_unique_id = f"{config_entry.entry_id}_increment_power_target"
+
     async def async_press(self) -> None:
-        """Handle the button press."""
         await self._api.increment_power_target()
 
 class DecrementPowerButton(BraiinsButton):
-    """Button to decrement the power target."""
     _attr_name = "Decrement Power Target"
-    _attr_unique_id = "decrement_power_target"
     _attr_icon = "mdi:arrow-down-bold"
+
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
+        super().__init__(api, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_decrement_power_target"
 
     async def async_press(self) -> None:
         """Handle the button press."""
         await self._api.decrement_power_target()
 
 class PauseMinerButton(BraiinsButton):
-    """Button to pause the miner."""
     _attr_name = "Pause Miner"
-    _attr_unique_id = "pause_miner"
     _attr_icon = "mdi:pause"
 
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
+        super().__init__(api, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_pause_miner"
+
     async def async_press(self) -> None:
-        """Handle the button press."""
         await self._api.pause_mining()
 
 class ResumeMinerButton(BraiinsButton):
-    """Button to resume the miner."""
     _attr_name = "Resume Miner"
-    _attr_unique_id = "resume_miner"
     _attr_icon = "mdi:play"
 
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry):
+        super().__init__(api, config_entry)
+        self._attr_unique_id = f"{config_entry.entry_id}_resume_miner"
+
     async def async_press(self) -> None:
-        """Handle the button press."""
         await self._api.resume_mining()
