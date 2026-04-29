@@ -76,8 +76,6 @@ class BraiinsAPI:
         try:
             async with asyncio.timeout(10):
                 async with self._session.get(url, headers=self._headers) as response:
-                    # ### START OF FIX ###
-                    # Check for 401 Unauthorized and attempt re-login
                     if response.status == 401:
                         _LOGGER.info("Token rejected by miner (401), attempting re-login.")
                         async with self._lock:
@@ -89,7 +87,6 @@ class BraiinsAPI:
                             
                             _LOGGER.warning("Re-login failed after 401, aborting request for %s", url)
                             return None
-                    # ### END OF FIX ###
 
                     response.raise_for_status()
                     return await response.json()
@@ -105,12 +102,13 @@ class BraiinsAPI:
         """Fetch data from all endpoints and combine them. Raise UpdateFailed only if all fail."""
         results = await asyncio.gather(
             self._make_get_request("miner/hw/hashboards"),
-            self._make_get_request("miner/stats")
+            self._make_get_request("miner/stats"),
+            self._make_get_request("performance/mode") 
         )
         
-        hashboard_data, stats_data = results
+        hashboard_data, stats_data, mode_data = results
         
-        if not hashboard_data and not stats_data:
+        if not hashboard_data and not stats_data and not mode_data:
             raise UpdateFailed("Failed to fetch any data from the miner.")
 
         combined_data = {}
@@ -118,6 +116,21 @@ class BraiinsAPI:
             combined_data.update(hashboard_data)
         if stats_data:
             combined_data.update(stats_data)
+        
+        if mode_data:
+            try:
+                watt = (
+                    mode_data.get("tunermode", {})
+                    .get("target", {})
+                    .get("powertarget", {})
+                    .get("power_target", {})
+                    .get("watt")
+                )
+                if watt is not None:
+                    combined_data["power_target"] = watt
+                    _LOGGER.debug("Extracted power target: %s watts", watt)
+            except (KeyError, AttributeError) as err:
+                _LOGGER.warning("Could not find power target in performance/mode response: %s", err)
 
         return combined_data
 
@@ -131,8 +144,6 @@ class BraiinsAPI:
         try:
             async with asyncio.timeout(10):
                 async with self._session.request(method, url, headers=self._headers, json=data) as response:
-                    # ### START OF FIX ###
-                    # Check for 401 Unauthorized and attempt re-login for command actions
                     if response.status == 401:
                         _LOGGER.info("Token rejected by miner (401) for command, attempting re-login.")
                         async with self._lock:
@@ -148,7 +159,6 @@ class BraiinsAPI:
                             
                             _LOGGER.error("Re-login failed after 401, aborting command for %s", url)
                             return False
-                    # ### END OF FIX ###
 
                     if response.status == 422:
                         response_text = await response.text()
@@ -168,6 +178,9 @@ class BraiinsAPI:
 
     async def decrement_power_target(self, value: int = 250) -> bool:
         return await self._make_request("patch", "performance/power-target/decrement", {"watt": value})
+
+    async def set_power_target(self, watt: int) -> bool:
+        return await self._make_request("put", "performance/power-target", {"watt": watt})
 
     async def pause_mining(self) -> bool:
         return await self._make_request("put", "actions/pause")
