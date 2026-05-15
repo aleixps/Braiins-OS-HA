@@ -24,7 +24,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass,
         _LOGGER,
         name=f"{DOMAIN}_data_coordinator",
-        # ### THE FIX IS HERE ###
         update_method=api.async_update_data, # Point to the new master method
         update_interval=timedelta(seconds=5),
     )
