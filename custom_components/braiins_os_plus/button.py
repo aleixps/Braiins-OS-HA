@@ -37,8 +37,12 @@ async def async_setup_entry(
         DecrementPowerButton(api, config_entry, coordinator),
         IncrementHashrateButton(api, config_entry, coordinator),
         DecrementHashrateButton(api, config_entry, coordinator),
+        StartMinerButton(api, config_entry, coordinator),
         PauseMinerButton(api, config_entry, coordinator),
         ResumeMinerButton(api, config_entry, coordinator),
+        StopMinerButton(api, config_entry, coordinator),
+        RestartMinerButton(api, config_entry, coordinator),
+        RebootDeviceButton(api, config_entry, coordinator),
     ]
     async_add_entities(buttons)
 
@@ -73,7 +77,7 @@ class BraiinsButton(CoordinatorEntity, ButtonEntity):
 class IncrementPowerButton(BraiinsButton):
     """Button entity to increment the power target."""
 
-    _attr_name = "Increment Power Target"
+    _attr_name = "Tuner Increase Power Target"
     _attr_icon = "mdi:arrow-up-bold"
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
@@ -106,7 +110,7 @@ class IncrementPowerButton(BraiinsButton):
 class DecrementPowerButton(BraiinsButton):
     """Button entity to decrement the power target."""
 
-    _attr_name = "Decrement Power Target"
+    _attr_name = "Tuner Decrease Power Target"
     _attr_icon = "mdi:arrow-down-bold"
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
@@ -139,7 +143,7 @@ class DecrementPowerButton(BraiinsButton):
 class IncrementHashrateButton(BraiinsButton):
     """Button entity to increment the hashrate target."""
 
-    _attr_name = "Increment Hashrate Target"
+    _attr_name = "Tuner Increase Hashrate Target"
     _attr_icon = "mdi:trending-up"
 
     def __init__(self, api, config_entry, coordinator) -> None:
@@ -171,7 +175,7 @@ class IncrementHashrateButton(BraiinsButton):
 class DecrementHashrateButton(BraiinsButton):
     """Button entity to decrement the hashrate target."""
 
-    _attr_name = "Decrement Hashrate Target"
+    _attr_name = "Tuner Decrease Hashrate Target"
     _attr_icon = "mdi:trending-down"
 
     def __init__(self, api, config_entry, coordinator) -> None:
@@ -203,7 +207,7 @@ class DecrementHashrateButton(BraiinsButton):
 class PauseMinerButton(BraiinsButton):
     """Button entity to pause miner operation."""
 
-    _attr_name = "Pause Miner"
+    _attr_name = "Mining Pause"
     _attr_icon = "mdi:pause"
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
@@ -216,10 +220,26 @@ class PauseMinerButton(BraiinsButton):
         await self._api.pause_mining()
 
 
+class StartMinerButton(BraiinsButton):
+    """Button entity to start BOSminer."""
+
+    _attr_name = "BOSminer Start"
+    _attr_icon = "mdi:play"
+
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
+        """Initialize the start BOSminer button."""
+        super().__init__(api, config_entry, coordinator)
+        self._attr_unique_id = f"{config_entry.entry_id}_start_bosminer"
+
+    async def async_press(self) -> None:
+        """Handle the button press to start BOSminer."""
+        await self._api.start_mining()
+
+
 class ResumeMinerButton(BraiinsButton):
     """Button entity to resume miner operation."""
 
-    _attr_name = "Resume Miner"
+    _attr_name = "Mining Resume"
     _attr_icon = "mdi:play"
 
     def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
@@ -230,3 +250,51 @@ class ResumeMinerButton(BraiinsButton):
     async def async_press(self) -> None:
         """Handle the button press to resume mining."""
         await self._api.resume_mining()
+
+
+class StopMinerButton(BraiinsButton):
+    """Button entity to stop BOSminer."""
+
+    _attr_name = "BOSminer Stop"
+    _attr_icon = "mdi:stop"
+
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
+        """Initialize the stop BOSminer button."""
+        super().__init__(api, config_entry, coordinator)
+        self._attr_unique_id = f"{config_entry.entry_id}_stop_bosminer"
+
+    async def async_press(self) -> None:
+        """Handle the button press to stop BOSminer."""
+        await self._api.stop_mining()
+
+
+class RestartMinerButton(BraiinsButton):
+    """Button entity to restart BOSminer."""
+
+    _attr_name = "BOSminer Restart"
+    _attr_icon = "mdi:restart"
+
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
+        """Initialize the restart BOSminer button."""
+        super().__init__(api, config_entry, coordinator)
+        self._attr_unique_id = f"{config_entry.entry_id}_restart_bosminer"
+
+    async def async_press(self) -> None:
+        """Handle the button press to restart BOSminer."""
+        await self._api.restart_mining()
+
+
+class RebootDeviceButton(BraiinsButton):
+    """Button entity to reboot the miner device."""
+
+    _attr_name = "Device Reboot"
+    _attr_icon = "mdi:power-cycle"
+
+    def __init__(self, api: BraiinsAPI, config_entry: ConfigEntry, coordinator) -> None:
+        """Initialize the reboot device button."""
+        super().__init__(api, config_entry, coordinator)
+        self._attr_unique_id = f"{config_entry.entry_id}_reboot_device"
+
+    async def async_press(self) -> None:
+        """Handle the button press to reboot the miner device."""
+        await self._api.reboot_device()

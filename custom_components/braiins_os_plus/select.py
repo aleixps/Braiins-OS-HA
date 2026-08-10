@@ -59,7 +59,7 @@ class BraiinsPerformanceModeSelect(CoordinatorEntity, SelectEntity):
                     target_value = data["constraints"]["tuner_constraints"][
                         "power_target"
                     ]["default"]["watt"]
-                except KeyError, TypeError:
+                except (KeyError, TypeError):
                     target_value = 2700  # Last resort fallback
 
         else:  # Hashrate Target
@@ -74,7 +74,7 @@ class BraiinsPerformanceModeSelect(CoordinatorEntity, SelectEntity):
                     target_value = data["constraints"]["tuner_constraints"][
                         "hashrate_target"
                     ]["default"]["terahash_per_second"]
-                except KeyError, TypeError:
+                except (KeyError, TypeError):
                     target_value = 100  # Last resort fallback
 
         if await self.api.set_performance_mode(option, target_value):

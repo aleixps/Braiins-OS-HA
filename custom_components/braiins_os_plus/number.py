@@ -75,7 +75,7 @@ class BraiinsHashrateTargetNumber(CoordinatorEntity, NumberEntity):
                     )
                 )
             )
-        except KeyError, TypeError:
+        except (KeyError, TypeError):
             return 10.0
 
     @property
@@ -91,7 +91,7 @@ class BraiinsHashrateTargetNumber(CoordinatorEntity, NumberEntity):
                     )
                 )
             )
-        except KeyError, TypeError:
+        except (KeyError, TypeError):
             return 300.0
 
     @property
@@ -250,7 +250,7 @@ class BraiinsPowerTargetNumber(CoordinatorEntity, NumberEntity):
                     "power_target"
                 ]["min"]["watt"]
             )
-        except KeyError, TypeError:
+        except (KeyError, TypeError):
             return 780.0
 
     @property
@@ -262,7 +262,7 @@ class BraiinsPowerTargetNumber(CoordinatorEntity, NumberEntity):
                     "power_target"
                 ]["max"]["watt"]
             )
-        except KeyError, TypeError:
+        except (KeyError, TypeError):
             return 6500.0
 
     @property

@@ -15,11 +15,16 @@ This is a custom integration for Home Assistant that allows you to control and m
     -   Real-time power consumption (W) and energy efficiency (J/TH).
     -   Highest chip and board temperatures.
     -   Per-hashboard hashrate, chip temperature, and board temperature.
-	-	Monitor RPM and Target Speed (%) for every fan detected.
+    -   Per-hashboard enabled state and per-pool enabled/alive/active state.
+    -   Monitor RPM and Target Speed (%) for every fan detected.
 -   **Simple Controls**: Provides button entities to perform key actions:
     -   Pause and Resume mining operations.
     -   Increment and Decrement the power target.
-	-   Fine-tune how much the increment/decrement buttons change your targets via dedicated configuration entities.
+    -   Start, Stop, and Restart BOSminer, plus reboot the device.
+    -   Fine-tune how much the increment/decrement buttons change your targets via dedicated configuration entities.
+-   **Direct Braiins Diagnostics**:
+    -   API heartbeat status (whether the last refresh succeeded).
+    -   Public API version, current miner errors, tuner state, efficiency profile diagnostics, pool diagnostics, and locate LED state.
 -   **Tuner Management**: 
     -   Set specific **Power Targets** (Watts) or **Hashrate Targets** (TH/s).
     -   Dynamic slider limits: Sliders automatically adjust their min/max range based on your specific miner's hardware constraints.
@@ -89,6 +94,11 @@ The integration will log in and create a new device with all associated entities
 | `button.decrement_hashrate_target`| Decreases Hashrate Target by the configured step. |
 | `button.pause_miner` | Pauses mining operations. |
 | `button.resume_miner` | Resumes mining operations. |
+| `button.start_bosminer` | Starts the BOSminer process. |
+| `button.stop_bosminer` | Stops the BOSminer process. |
+| `button.restart_bosminer` | Restarts the BOSminer process. |
+| `button.reboot_device` | Reboots the miner device. |
+| `switch.device_locate_led_blinking` | Turns the miner locate LED blinking state on or off. |
 
 ### Sensors (Updated every 5s)
 
@@ -101,8 +111,32 @@ The integration will log in and create a new device with all associated entities
 | **Board Temperature** | Calculated highest surface temperature among all boards. | °C |
 | **Fan Speed** | Actual RPM for each individual fan. | RPM |
 | **Fan Target Speed** | The duty cycle percentage for each fan. | % |
+| **API Version** | Braiins OS Public API version reported by the miner. | - |
+| **Miner Error Count** | Number of current miner errors; raw error list is exposed as attributes. | count |
+| **Tuner State** | Overall Braiins tuner state as a readable label such as `stable` or `tuning`. | - |
+| **Efficiency Profile Points** | Number of efficiency profile points exposed by Braiins. | count |
+| **Efficiency Profile Min/Max Power Target** | Lowest and highest power targets present in the efficiency profile. | W |
+| **Efficiency Profile Min/Max Hashrate** | Lowest and highest hashrates present in the efficiency profile. | TH/s |
+| **Pool Groups** | Number of configured pool groups. | count |
+| **Pool Count** | Number of configured pools. | count |
+| **Pool Active** | URL of the currently active pool. | - |
 
-*Per-hashboard sensors for hashrate and temperature are also created automatically.*
+### Binary Sensors
+
+| Binary Sensor | Description |
+| :--- | :--- |
+| **API Heartbeat** | On when the last coordinator/API refresh succeeded; off when the integration cannot currently poll the miner. |
+| **Hashboard N Enabled** | One binary sensor per hashboard, using the direct Braiins `enabled` flag for that board. |
+| **Pool N Enabled** | One binary sensor per configured pool, showing whether Braiins marks that pool as enabled. |
+| **Pool N Alive** | One binary sensor per configured pool, showing whether Braiins reports that pool as reachable/alive. |
+| **Pool N Active** | One binary sensor per configured pool, showing whether Braiins currently uses that pool. |
+
+Notes:
+
+-   **Per-hashboard** means the integration creates one entity for each hashboard reported by the miner.
+-   **Per-pool** means the integration creates one set of pool state entities for each pool configured in Braiins.
+
+*Per-hashboard sensors for hashrate and temperature are also created automatically, alongside hashboard enabled binary sensors.*
 
 ## Creating an Energy Sensor (kWh)
 
