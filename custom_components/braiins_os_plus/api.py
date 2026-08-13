@@ -197,15 +197,23 @@ class BraiinsAPI:
             )
         )
 
-        # If all heavy endpoints return 500, the miner is reconfiguring.
-        # Return the last successful data to prevent the UI from reverting.
+        # If all heavy endpoints are unavailable but the miner is still otherwise
+        # reachable, treat it as a transient reconfiguration window and keep the
+        # last successful telemetry to avoid UI reverts.
+        #
+        # Important: when the miner is fully offline (no live endpoint responded),
+        # do NOT return cached telemetry here. Let the coordinator update fail so
+        # live sensors become unavailable instead of freezing stale temperatures /
+        # hashrate / power values.
         if mode is None and stats is None and hashboards_raw is None:
-            if self._last_data:
+            if self._last_live_reachability and self._last_data:
                 _LOGGER.info(
                     "Miner is reconfiguring; using cached data to prevent UI revert"
                 )
                 return self._last_data
-            raise UpdateFailed("Miner is busy and no cached data is available.")
+            raise UpdateFailed(
+                "Miner is offline or busy and no live telemetry is available."
+            )
 
         if not any([details, constraints, hashboards_raw, stats, mode, cooling]):
             raise UpdateFailed("Failed to fetch any data from the miner.")
