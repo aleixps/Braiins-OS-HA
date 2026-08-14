@@ -3,7 +3,7 @@
 DOMAIN = "braiins_os_plus"
 
 # List of platforms that this integration will support
-PLATFORMS = ["button", "number", "select", "sensor"]
+PLATFORMS = ["binary_sensor", "button", "number", "select", "sensor", "switch"]
 
 CONF_POWER_STEP = "power_step"
 DEFAULT_POWER_STEP = 250

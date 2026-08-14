@@ -30,6 +30,12 @@ class BraiinsAPI:
         self._headers = {"Authorization": self._token}
         self._lock = asyncio.Lock()
         self._last_data = {}
+        self._last_live_reachability = False
+
+    @property
+    def last_live_reachability(self) -> bool:
+        """Return whether the most recent poll hit the miner live, not just cache."""
+        return self._last_live_reachability
 
     def get_cached_value(self, key: str) -> Any:
         """Public method to get a value from the internal cache."""
@@ -144,36 +150,90 @@ class BraiinsAPI:
     async def async_update_data(self) -> dict[str, Any]:
         """Fetch data from all endpoints and combine them. Raise UpdateFailed only if all fail."""
         results = await asyncio.gather(
+            self._make_get_request("version/"),
             self._make_get_request("miner/details"),
             self._make_get_request("configuration/constraints"),
             self._make_get_request("miner/hw/hashboards"),
             self._make_get_request("miner/stats"),
+            self._make_get_request("miner/errors"),
             self._make_get_request("performance/mode"),
+            self._make_get_request("performance/tuner-state"),
+            self._make_get_request("performance/efficiency-profile"),
+            self._make_get_request("pools/"),
+            self._make_get_request("actions/locate"),
             self._make_get_request("cooling/state"),
         )
 
-        details, constraints, hashboards_raw, stats, mode, cooling = results
+        (
+            version,
+            details,
+            constraints,
+            hashboards_raw,
+            stats,
+            errors,
+            mode,
+            tuner_state,
+            efficiency_profile,
+            pools,
+            locate_status,
+            cooling,
+        ) = results
 
-        # If all heavy endpoints return 500, the miner is reconfiguring.
-        # Return the last successful data to prevent the UI from reverting.
+        self._last_live_reachability = any(
+            result is not None
+            for result in (
+                version,
+                details,
+                constraints,
+                hashboards_raw,
+                stats,
+                errors,
+                mode,
+                tuner_state,
+                efficiency_profile,
+                pools,
+                locate_status,
+                cooling,
+            )
+        )
+
+        # If all heavy endpoints are unavailable but the miner is still otherwise
+        # reachable, treat it as a transient reconfiguration window and keep the
+        # last successful telemetry to avoid UI reverts.
+        #
+        # Important: when the miner is fully offline (no live endpoint responded),
+        # do NOT return cached telemetry here. Let the coordinator update fail so
+        # live sensors become unavailable instead of freezing stale temperatures /
+        # hashrate / power values.
         if mode is None and stats is None and hashboards_raw is None:
-            if self._last_data:
+            if self._last_live_reachability and self._last_data:
                 _LOGGER.info(
                     "Miner is reconfiguring; using cached data to prevent UI revert"
                 )
                 return self._last_data
-            raise UpdateFailed("Miner is busy and no cached data is available.")
+            raise UpdateFailed(
+                "Miner is offline or busy and no live telemetry is available."
+            )
 
         if not any([details, constraints, hashboards_raw, stats, mode, cooling]):
             raise UpdateFailed("Failed to fetch any data from the miner.")
 
         combined_data = {
             "details": details or self._last_data.get("details", {}),
+            "version": version or self._last_data.get("version", {}),
             "constraints": constraints or self._last_data.get("constraints", {}),
             "cooling": cooling or self._last_data.get("cooling", {}),
             "hashboards": (hashboards_raw.get("hashboards") if hashboards_raw else None)
             or self._last_data.get("hashboards", []),
             "stats": stats or self._last_data.get("stats", {}),
+            "errors": errors or self._last_data.get("errors", {}),
+            "tuner_state": tuner_state or self._last_data.get("tuner_state", {}),
+            "efficiency_profile": efficiency_profile
+            or self._last_data.get("efficiency_profile", {}),
+            "pools": pools if pools is not None else self._last_data.get("pools", []),
+            "locate_status": locate_status
+            if locate_status is not None
+            else self._last_data.get("locate_status"),
             "performance_mode": self._last_data.get("performance_mode"),
             "power_target": self._last_data.get("power_target"),  # From Cache
             "hashrate_target": self._last_data.get("hashrate_target"),  # From Cache
@@ -225,14 +285,14 @@ class BraiinsAPI:
                 )
                 if th is not None:
                     combined_data["hashrate_target"] = th
-            except KeyError, AttributeError:
+            except (KeyError, AttributeError):
                 pass
 
         self._last_data = combined_data
         return combined_data
 
     async def _make_request(
-        self, method: str, endpoint: str, data: dict | None = None
+        self, method: str, endpoint: str, data: Any | None = None
     ) -> bool:
         """Make a PUT or PATCH request for button presses."""
         if not await self._is_token_valid_and_renew():
@@ -344,6 +404,26 @@ class BraiinsAPI:
     async def resume_mining(self) -> bool:
         """Resume mining on the miner."""
         return await self._make_request("put", "actions/resume")
+
+    async def start_mining(self) -> bool:
+        """Start BOSminer on the miner."""
+        return await self._make_request("put", "actions/start")
+
+    async def stop_mining(self) -> bool:
+        """Stop BOSminer on the miner."""
+        return await self._make_request("put", "actions/stop")
+
+    async def restart_mining(self) -> bool:
+        """Restart BOSminer on the miner."""
+        return await self._make_request("put", "actions/restart")
+
+    async def reboot_device(self) -> bool:
+        """Reboot the miner device."""
+        return await self._make_request("put", "actions/reboot")
+
+    async def set_locate_status(self, enabled: bool) -> bool:
+        """Enable or disable the miner locate LED blinking status."""
+        return await self._make_request("put", "actions/locate", enabled)
 
     async def set_performance_mode(self, mode: str, value: float) -> bool:
         """Switch mode and send a specific target value."""

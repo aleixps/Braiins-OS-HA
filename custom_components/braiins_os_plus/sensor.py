@@ -13,6 +13,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfPower, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -22,6 +23,61 @@ _LOGGER = logging.getLogger(__name__)
 
 TERAHASH_PER_SECOND = "TH/s"
 JOULE_PER_TERAHASH = "J/TH"
+
+TUNER_STATES = {
+    0: "unspecified",
+    1: "disabled",
+    2: "stable",
+    3: "tuning",
+    4: "error",
+    5: "continuous",
+    6: "preheat",
+}
+
+
+def _efficiency_profile_points(coordinator) -> list[dict[str, Any]]:
+    """Return efficiency profile points from the coordinator data."""
+    return coordinator.data.get("efficiency_profile", {}).get("points", [])
+
+
+def _number_from_path(data: dict[str, Any], *path: str) -> float | None:
+    """Return a numeric value from a nested dictionary path."""
+    value: Any = data
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _profile_range(coordinator, *path: str) -> tuple[float | None, float | None]:
+    """Return min and max numeric values for an efficiency profile point path."""
+    values = [
+        value
+        for point in _efficiency_profile_points(coordinator)
+        if (value := _number_from_path(point, *path)) is not None
+    ]
+    if not values:
+        return None, None
+    return min(values), max(values)
+
+
+def _pool_groups(coordinator) -> list[dict[str, Any]]:
+    """Return configured pool groups."""
+    pools = coordinator.data.get("pools", [])
+    return pools if isinstance(pools, list) else []
+
+
+def _all_pools(coordinator) -> list[dict[str, Any]]:
+    """Return all pools from all configured pool groups."""
+    return [
+        pool
+        for group in _pool_groups(coordinator)
+        for pool in group.get("pools", [])
+        if isinstance(pool, dict)
+    ]
 
 
 async def async_setup_entry(
@@ -63,6 +119,17 @@ async def async_setup_entry(
             HighestBoardTempSensor(coordinator),
             MinerConsumptionSensor(coordinator),
             MinerEfficiencySensor(coordinator),
+            ApiVersionSensor(coordinator),
+            MinerErrorCountSensor(coordinator),
+            TunerStateSensor(coordinator),
+            EfficiencyProfilePointCountSensor(coordinator),
+            EfficiencyProfileMinPowerTargetSensor(coordinator),
+            EfficiencyProfileMaxPowerTargetSensor(coordinator),
+            EfficiencyProfileMinHashrateSensor(coordinator),
+            EfficiencyProfileMaxHashrateSensor(coordinator),
+            PoolGroupCountSensor(coordinator),
+            PoolCountSensor(coordinator),
+            ActivePoolSensor(coordinator),
         ]
     )
 
@@ -154,6 +221,256 @@ class MinerEfficiencySensor(BraiinsSensor):
                 return round(float(val), 2)
 
         return 0.0
+
+
+class ApiVersionSensor(BraiinsSensor):
+    """Diagnostic sensor for the Braiins OS Public API version."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the API version sensor."""
+        super().__init__(coordinator, "api_version")
+        self._attr_name = "API Version"
+        self._attr_icon = "mdi:api"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the Public API version as major.minor.patch."""
+        version = self.coordinator.data.get("version", {})
+        major = version.get("major")
+        minor = version.get("minor")
+        patch = version.get("patch")
+        if major is None or minor is None or patch is None:
+            return None
+        return f"{major}.{minor}.{patch}"
+
+
+class MinerErrorCountSensor(BraiinsSensor):
+    """Diagnostic sensor for the number of current miner errors."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the miner error count sensor."""
+        super().__init__(coordinator, "miner_error_count")
+        self._attr_name = "Miner Error Count"
+        self._attr_icon = "mdi:alert-circle-outline"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of current miner errors."""
+        return len(self.coordinator.data.get("errors", {}).get("errors", []))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return error details for diagnostics."""
+        errors = self.coordinator.data.get("errors", {}).get("errors", [])
+        return {"errors": errors}
+
+
+class TunerStateSensor(BraiinsSensor):
+    """Diagnostic sensor for the Braiins tuner state."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the tuner state sensor."""
+        super().__init__(coordinator, "tuner_state")
+        self._attr_name = "Tuner State"
+        self._attr_icon = "mdi:tune-variant"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the overall tuner state as a readable enum label."""
+        raw_state = self.coordinator.data.get("tuner_state", {}).get(
+            "overall_tuner_state"
+        )
+        if raw_state is None:
+            return None
+        return TUNER_STATES.get(raw_state, f"unknown_{raw_state}")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return detailed tuner mode state for diagnostics."""
+        tuner_state = self.coordinator.data.get("tuner_state", {})
+        raw_state = tuner_state.get("overall_tuner_state")
+        return {
+            "raw_state": raw_state,
+            "mode_state": tuner_state.get("mode_state"),
+        }
+
+
+class EfficiencyProfilePointCountSensor(BraiinsSensor):
+    """Diagnostic sensor for the number of efficiency profile points."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the efficiency profile point count sensor."""
+        super().__init__(coordinator, "efficiency_profile_points")
+        self._attr_name = "Efficiency Profile Points"
+        self._attr_icon = "mdi:chart-line"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of available efficiency profile points."""
+        return len(self.coordinator.data.get("efficiency_profile", {}).get("points", []))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return efficiency profile points for diagnostics and advanced automations."""
+        points = _efficiency_profile_points(self.coordinator)
+        return {"points": points}
+
+
+class EfficiencyProfileMinPowerTargetSensor(BraiinsSensor):
+    """Diagnostic sensor for the minimum profile power target."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the minimum profile power target sensor."""
+        super().__init__(coordinator, "efficiency_profile_min_power_target")
+        self._attr_name = "Efficiency Profile Min Power Target"
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the lowest power target in the efficiency profile."""
+        min_value, _ = _profile_range(self.coordinator, "power_target", "watt")
+        return int(min_value) if min_value is not None else None
+
+
+class EfficiencyProfileMaxPowerTargetSensor(BraiinsSensor):
+    """Diagnostic sensor for the maximum profile power target."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the maximum profile power target sensor."""
+        super().__init__(coordinator, "efficiency_profile_max_power_target")
+        self._attr_name = "Efficiency Profile Max Power Target"
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_native_unit_of_measurement = UnitOfPower.WATT
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int | None:
+        """Return the highest power target in the efficiency profile."""
+        _, max_value = _profile_range(self.coordinator, "power_target", "watt")
+        return int(max_value) if max_value is not None else None
+
+
+class EfficiencyProfileMinHashrateSensor(BraiinsSensor):
+    """Diagnostic sensor for the minimum profile hashrate."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the minimum profile hashrate sensor."""
+        super().__init__(coordinator, "efficiency_profile_min_hashrate")
+        self._attr_name = "Efficiency Profile Min Hashrate"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:speedometer-slow"
+        self._attr_native_unit_of_measurement = TERAHASH_PER_SECOND
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the lowest hashrate in the efficiency profile."""
+        min_value, _ = _profile_range(
+            self.coordinator, "hashrate", "terahash_per_second"
+        )
+        return round(min_value, 2) if min_value is not None else None
+
+
+class EfficiencyProfileMaxHashrateSensor(BraiinsSensor):
+    """Diagnostic sensor for the maximum profile hashrate."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the maximum profile hashrate sensor."""
+        super().__init__(coordinator, "efficiency_profile_max_hashrate")
+        self._attr_name = "Efficiency Profile Max Hashrate"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_icon = "mdi:speedometer"
+        self._attr_native_unit_of_measurement = TERAHASH_PER_SECOND
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the highest hashrate in the efficiency profile."""
+        _, max_value = _profile_range(
+            self.coordinator, "hashrate", "terahash_per_second"
+        )
+        return round(max_value, 2) if max_value is not None else None
+
+
+class PoolGroupCountSensor(BraiinsSensor):
+    """Diagnostic sensor for the number of configured pool groups."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the pool group count sensor."""
+        super().__init__(coordinator, "pool_group_count")
+        self._attr_name = "Pool Groups"
+        self._attr_icon = "mdi:server-network"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of configured pool groups."""
+        return len(_pool_groups(self.coordinator))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return pool groups for diagnostics."""
+        return {"pool_groups": _pool_groups(self.coordinator)}
+
+
+class PoolCountSensor(BraiinsSensor):
+    """Diagnostic sensor for the number of configured pools."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the pool count sensor."""
+        super().__init__(coordinator, "pool_count")
+        self._attr_name = "Pool Count"
+        self._attr_icon = "mdi:server"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> int:
+        """Return the number of configured pools."""
+        return len(_all_pools(self.coordinator))
+
+
+class ActivePoolSensor(BraiinsSensor):
+    """Diagnostic sensor for the active pool."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the active pool sensor."""
+        super().__init__(coordinator, "active_pool")
+        self._attr_name = "Pool Active"
+        self._attr_icon = "mdi:server-network"
+        self._attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the active pool URL."""
+        for pool in _all_pools(self.coordinator):
+            if pool.get("active"):
+                return pool.get("url")
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return active pool details."""
+        for group in _pool_groups(self.coordinator):
+            for pool in group.get("pools", []):
+                if isinstance(pool, dict) and pool.get("active"):
+                    return {
+                        "group_uid": group.get("uid"),
+                        "group_name": group.get("name"),
+                        "pool": pool,
+                    }
+        return {}
 
 
 class TotalHashrateSensor(BraiinsSensor):
