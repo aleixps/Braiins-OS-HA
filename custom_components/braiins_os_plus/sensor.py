@@ -159,8 +159,8 @@ class BraiinsSensor(CoordinatorEntity, SensorEntity):
             or f"Braiins OS+ Miner ({self._config_entry.data['miner_ip']})",
             manufacturer="Braiins",
             model=ident.get("miner_model") or "Miner with Braiins OS+",
-            sw_version=data.get("bos_version", {}).get("current"),
-            hw_version=data.get("psu_info", {}).get("model_name"),
+            sw_version=(data.get("bos_version") or {}).get("current"),
+            hw_version=(data.get("psu_info") or {}).get("model_name"),
             configuration_url=f"http://{self._config_entry.data['miner_ip']}",
             connections={("mac", data.get("mac_address"))}
             if data.get("mac_address")
