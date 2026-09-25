@@ -13,8 +13,8 @@ This is a custom integration for Home Assistant that allows you to control and m
 -   **Detailed Monitoring**: Provides sensor entities for key metrics with a rapid 5-second update interval.
     -   Total hashrate (TH/s).
     -   Real-time power consumption (W) and energy efficiency (J/TH).
-    -   Highest chip and board temperatures.
-    -   Per-hashboard hashrate, chip temperature, and board temperature.
+    -   Highest chip and board temperatures, lowest air inlet and highest air outlet temperatures.
+    -   Per-hashboard hashrate, chip, board, inlet, and outlet temperature.
     -   Per-hashboard enabled state and per-pool enabled/alive/active state.
     -   Monitor RPM and Target Speed (%) for every fan detected.
 -   **Simple Controls**: Provides button entities to perform key actions:
@@ -109,6 +109,8 @@ The integration will log in and create a new device with all associated entities
 | **Miner Efficiency** | Real-time efficiency (reports 0.0 when paused). | J/TH |
 | **Chip Temperature** | The highest chip temperature reported by cooling system. | °C |
 | **Board Temperature** | Calculated highest surface temperature among all boards. | °C |
+| **Inlet Temperature** | Lowest air inlet temperature among all boards. | °C |
+| **Outlet Temperature** | Highest air outlet temperature among all boards. | °C |
 | **Fan Speed** | Actual RPM for each individual fan. | RPM |
 | **Fan Target Speed** | The duty cycle percentage for each fan. | % |
 | **API Version** | Braiins OS Public API version reported by the miner. | - |
@@ -136,7 +138,7 @@ Notes:
 -   **Per-hashboard** means the integration creates one entity for each hashboard reported by the miner.
 -   **Per-pool** means the integration creates one set of pool state entities for each pool configured in Braiins.
 
-*Per-hashboard sensors for hashrate and temperature are also created automatically, alongside hashboard enabled binary sensors.*
+*Per-hashboard sensors for hashrate and chip, board, inlet, and outlet temperature are also created automatically, alongside hashboard enabled binary sensors.*
 
 ## Creating an Energy Sensor (kWh)
 
