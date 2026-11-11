@@ -99,6 +99,8 @@ async def async_setup_entry(
                     [
                         HashboardChipTempSensor(coordinator, board_id),
                         HashboardBoardTempSensor(coordinator, board_id),
+                        HashboardInletTempSensor(coordinator, board_id),
+                        HashboardOutletTempSensor(coordinator, board_id),
                         HashboardHashrateSensor(coordinator, board_id),
                     ]
                 )
@@ -117,6 +119,8 @@ async def async_setup_entry(
             TotalHashrateSensor(coordinator),
             HighestChipTempSensor(coordinator),
             HighestBoardTempSensor(coordinator),
+            LowestInletTempSensor(coordinator),
+            HighestOutletTempSensor(coordinator),
             MinerConsumptionSensor(coordinator),
             MinerEfficiencySensor(coordinator),
             ApiVersionSensor(coordinator),
@@ -555,6 +559,55 @@ class HighestBoardTempSensor(BraiinsSensor):
         return max(temps) if temps else None
 
 
+def _board_temps(coordinator, key: str) -> list[float]:
+    """Return a per-board temperature field in degrees C across all boards."""
+    if not coordinator.data:
+        return []
+    return [
+        float(temp["degree_c"])
+        for board in coordinator.data.get("hashboards") or []
+        if board
+        and (temp := board.get(key))
+        and temp.get("degree_c") is not None
+    ]
+
+
+class LowestInletTempSensor(BraiinsSensor):
+    """Sensor for the lowest air inlet temperature across all boards."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the lowest inlet temperature sensor."""
+        super().__init__(coordinator, "lowest_inlet_temp")
+        self._attr_name = "Inlet Temperature"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the lowest inlet temperature across all boards."""
+        temps = _board_temps(self.coordinator, "lowest_inlet_temp")
+        return min(temps) if temps else None
+
+
+class HighestOutletTempSensor(BraiinsSensor):
+    """Sensor for the highest air outlet temperature across all boards."""
+
+    def __init__(self, coordinator) -> None:
+        """Initialize the highest outlet temperature sensor."""
+        super().__init__(coordinator, "highest_outlet_temp")
+        self._attr_name = "Outlet Temperature"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the highest outlet temperature across all boards."""
+        temps = _board_temps(self.coordinator, "highest_outlet_temp")
+        return max(temps) if temps else None
+
+
 # --- Per-Hashboard Sensors ---
 
 
@@ -619,6 +672,46 @@ class HashboardBoardTempSensor(HashboardSensor):
         """Return the board temperature for this hashboard."""
         if self.board_data and (board_temp := self.board_data.get("board_temp")):
             return board_temp.get("degree_c")
+        return None
+
+
+class HashboardInletTempSensor(HashboardSensor):
+    """Sensor for a single hashboard's lowest air inlet temperature."""
+
+    def __init__(self, coordinator, board_id: str) -> None:
+        """Initialize the hashboard inlet temperature sensor."""
+        super().__init__(coordinator, board_id, "inlet_temp")
+        self._attr_name = f"Hashboard {board_id} Inlet Temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the lowest inlet temperature for this hashboard."""
+        if self.board_data and (inlet_temp := self.board_data.get("lowest_inlet_temp")):
+            return inlet_temp.get("degree_c")
+        return None
+
+
+class HashboardOutletTempSensor(HashboardSensor):
+    """Sensor for a single hashboard's highest air outlet temperature."""
+
+    def __init__(self, coordinator, board_id: str) -> None:
+        """Initialize the hashboard outlet temperature sensor."""
+        super().__init__(coordinator, board_id, "outlet_temp")
+        self._attr_name = f"Hashboard {board_id} Outlet Temp"
+        self._attr_device_class = SensorDeviceClass.TEMPERATURE
+        self._attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the highest outlet temperature for this hashboard."""
+        if self.board_data and (
+            outlet_temp := self.board_data.get("highest_outlet_temp")
+        ):
+            return outlet_temp.get("degree_c")
         return None
 
 
