@@ -559,21 +559,29 @@ class HighestBoardTempSensor(BraiinsSensor):
         return max(temps) if temps else None
 
 
-def _board_temps(coordinator, key: str) -> list[float]:
+def _board_temp(board: dict[str, Any] | None, *keys: str) -> float | None:
+    """Return the first available temperature in degrees C from a hashboard for the given keys."""
+    if not board:
+        return None
+    for key in keys:
+        if (temp := board.get(key)) and (val := temp.get("degree_c")) is not None:
+            return float(val)
+    return None
+
+
+def _board_temps(coordinator, *keys: str) -> list[float]:
     """Return a per-board temperature field in degrees C across all boards."""
     if not coordinator.data:
         return []
     return [
-        float(temp["degree_c"])
+        val
         for board in coordinator.data.get("hashboards") or []
-        if board
-        and (temp := board.get(key))
-        and temp.get("degree_c") is not None
+        if (val := _board_temp(board, *keys)) is not None
     ]
 
 
 class LowestInletTempSensor(BraiinsSensor):
-    """Sensor for the lowest air inlet temperature across all boards."""
+    """Sensor for the lowest air or water inlet temperature across all boards."""
 
     def __init__(self, coordinator) -> None:
         """Initialize the lowest inlet temperature sensor."""
@@ -586,12 +594,14 @@ class LowestInletTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the lowest inlet temperature across all boards."""
-        temps = _board_temps(self.coordinator, "lowest_inlet_temp")
+        temps = _board_temps(
+            self.coordinator, "lowest_inlet_temp", "lowest_water_inlet_temp"
+        )
         return min(temps) if temps else None
 
 
 class HighestOutletTempSensor(BraiinsSensor):
-    """Sensor for the highest air outlet temperature across all boards."""
+    """Sensor for the highest air or water outlet temperature across all boards."""
 
     def __init__(self, coordinator) -> None:
         """Initialize the highest outlet temperature sensor."""
@@ -604,7 +614,9 @@ class HighestOutletTempSensor(BraiinsSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest outlet temperature across all boards."""
-        temps = _board_temps(self.coordinator, "highest_outlet_temp")
+        temps = _board_temps(
+            self.coordinator, "highest_outlet_temp", "highest_water_outlet_temp"
+        )
         return max(temps) if temps else None
 
 
@@ -676,7 +688,7 @@ class HashboardBoardTempSensor(HashboardSensor):
 
 
 class HashboardInletTempSensor(HashboardSensor):
-    """Sensor for a single hashboard's lowest air inlet temperature."""
+    """Sensor for a single hashboard's lowest air or water inlet temperature."""
 
     def __init__(self, coordinator, board_id: str) -> None:
         """Initialize the hashboard inlet temperature sensor."""
@@ -689,13 +701,13 @@ class HashboardInletTempSensor(HashboardSensor):
     @property
     def native_value(self) -> float | None:
         """Return the lowest inlet temperature for this hashboard."""
-        if self.board_data and (inlet_temp := self.board_data.get("lowest_inlet_temp")):
-            return inlet_temp.get("degree_c")
-        return None
+        return _board_temp(
+            self.board_data, "lowest_inlet_temp", "lowest_water_inlet_temp"
+        )
 
 
 class HashboardOutletTempSensor(HashboardSensor):
-    """Sensor for a single hashboard's highest air outlet temperature."""
+    """Sensor for a single hashboard's highest air or water outlet temperature."""
 
     def __init__(self, coordinator, board_id: str) -> None:
         """Initialize the hashboard outlet temperature sensor."""
@@ -708,11 +720,9 @@ class HashboardOutletTempSensor(HashboardSensor):
     @property
     def native_value(self) -> float | None:
         """Return the highest outlet temperature for this hashboard."""
-        if self.board_data and (
-            outlet_temp := self.board_data.get("highest_outlet_temp")
-        ):
-            return outlet_temp.get("degree_c")
-        return None
+        return _board_temp(
+            self.board_data, "highest_outlet_temp", "highest_water_outlet_temp"
+        )
 
 
 class HashboardHashrateSensor(HashboardSensor):
